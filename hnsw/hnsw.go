@@ -1,6 +1,7 @@
 package hnsw
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sync"
@@ -15,7 +16,7 @@ const defaultVectorDim = 128
 
 const defaultSize = 1000
 
-type distanceComputer func(vectorSrc, vectorDst []float32) float32
+type distanceComputer func(vec1, vec2 []float64) float64
 
 type HNSWOption struct {
 	M              int
@@ -37,13 +38,15 @@ type HNSW struct {
 	curMaxLevel int
 	entryPoint  int
 
+	distanceComputerFunc distanceComputer
+
 	EfConstruction int
 	EfSearch       int
 
 	mL  float64 // mL = 1 / log(M)
 	rng *rand.Rand
 
-	vectors [][]float32 // Vectors in the graph
+	vectors [][]float64 // Vectors in the graph
 	nodes   []*Node     // Nodes in the graph
 
 	writeLock sync.Mutex
@@ -86,26 +89,32 @@ func NewHNSW(option HNSWOption) *HNSW {
 	mL := 1.0 / math.Log(float64(option.M))
 
 	return &HNSW{
-		M:              option.M,
-		EfConstruction: option.EfConstruction,
-		EfSearch:       option.EfSearch,
-		MaxLevel:       option.MaxLevel,
-		vectorDim:      option.VectorDim,
-		curMaxLevel:    0,
-		rng:            rng,
-		mL:             mL,
-		vectors:        make([][]float32, 0, option.Size),
-		nodes:          make([]*Node, 0, option.Size),
+		M:                    option.M,
+		EfConstruction:       option.EfConstruction,
+		EfSearch:             option.EfSearch,
+		MaxLevel:             option.MaxLevel,
+		vectorDim:            option.VectorDim,
+		distanceComputerFunc: L2Distance, // now we only have this. hardcode
+		curMaxLevel:          0,
+		rng:                  rng,
+		mL:                   mL,
+		vectors:              make([][]float64, 0, option.Size),
+		nodes:                make([]*Node, 0, option.Size),
 	}
 }
 
-func (h *HNSW) AddVector(vector []float32) (id int64) {
+func (h *HNSW) AddVector(vector []float64) (id int, err error) {
+
+	// can't add if dimension is different
+	if len(vector) != h.vectorDim {
+		err = fmt.Errorf("AddVector : Different vector dimension. Got %d expected %d", len(vector), h.vectorDim)
+		return 0, err
+	}
 
 	maxLevel := h.genRandomMaxLevel()
 
 	newNode := &Node{
-		maxLevel:          maxLevel,
-		perLayerNeighbors: make([][]int, maxLevel),
+		maxLevel: maxLevel,
 	}
 
 	h.writeLock.Lock()
@@ -115,24 +124,39 @@ func (h *HNSW) AddVector(vector []float32) (id int64) {
 	h.vectors = append(h.vectors, vector)
 	h.nodes = append(h.nodes, newNode)
 
+	// initialize the neighbors array
+	for i := 0; i <= maxLevel; i++ {
+		newNode.perLayerNeighbors = append(newNode.perLayerNeighbors, []int{})
+	}
+
+	// for first node, set entry point
+	if len(h.nodes) == 1 {
+		h.entryPoint = newNode.ID
+		h.curMaxLevel = maxLevel
+
+		return newNode.ID, nil
+	}
+
 	// search top level
-	candidateNodeID, candidateDistance := h.searchLevel(vector, []int{h.entryPoint}, []float32{0}, h.curMaxLevel, 1, nil)
+	var candidateNodeID = []int{h.entryPoint}
+	var candidateDistance = []float64{0}
 
 	// search next level until 0
 	for l := h.curMaxLevel - 1; l >= 0; l-- {
 		// when level higher than nodeMaxlevel, topK is 1
 		if l > maxLevel {
-			candidateNodeID, candidateDistance = h.searchLevel(vector, candidateNodeID, candidateDistance, l, 1, nil)
+			candidateNodeID, candidateDistance = h.searchLevel(vector, candidateNodeID, candidateDistance, l, 1)
 		} else {
-			candidateNodeID, candidateDistance = h.searchLevel(vector, candidateNodeID, candidateDistance, l, h.EfConstruction, nil)
+			candidateNodeID, candidateDistance = h.searchLevel(vector, candidateNodeID, candidateDistance, l, h.EfConstruction)
 			// add candidate as neighboor on this level
 			newNode.perLayerNeighbors[l] = append(newNode.perLayerNeighbors[l], candidateNodeID...)
 		}
 	}
 
-	// set current max level of graph to the just added node if higher
+	// set current max level of graph to the just added node if higher and set new entry point
 	if h.curMaxLevel < maxLevel {
 		h.curMaxLevel = maxLevel
+		h.entryPoint = newNode.ID
 	}
 
 	return
@@ -146,7 +170,7 @@ func (h *HNSW) genRandomMaxLevel() int {
 }
 
 // searchLevel search within defined level
-func (h *HNSW) searchLevel(vectorToSearch []float32, entrypointNode []int, distanceToEntrypoint []float32, level int, topK int, distanceFunc distanceComputer) (resultNodeID []int, resultDistance []float32) {
+func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int, topK int) (resultNodeID []int, resultDistance []float64) {
 	if len(entrypointNode) != len(distanceToEntrypoint) {
 		return
 	}
@@ -157,10 +181,10 @@ func (h *HNSW) searchLevel(vectorToSearch []float32, entrypointNode []int, dista
 	candidate := newPriorityQueueMax(h.EfConstruction)
 	result := newPriorityQueueMin(h.EfConstruction)
 
-	var farthestResult float32
+	var farthestResult float64
 
 	for idx := 0; idx < len(entrypointNode); idx++ {
-		candidate.Push(pqItem{Value: entrypointNode[idx], Priority: distanceToEntrypoint[idx]})
+		candidate.Push(&pqItem{Value: entrypointNode[idx], Priority: distanceToEntrypoint[idx]})
 	}
 
 	for candidate.Len() > 0 {
@@ -174,7 +198,7 @@ func (h *HNSW) searchLevel(vectorToSearch []float32, entrypointNode []int, dista
 		// calculate the distance
 		// Distance is being used for the priority queue
 		if toVisit.Priority == 0 {
-			toVisit.Priority = distanceFunc(vectorToSearch, h.vectors[toVisit.Value])
+			toVisit.Priority = h.distanceComputerFunc(vectorToSearch, h.vectors[toVisit.Value])
 		}
 
 		// update farthest result
@@ -193,16 +217,76 @@ func (h *HNSW) searchLevel(vectorToSearch []float32, entrypointNode []int, dista
 
 		// add neighboor as candidate
 		for _, nodeID := range h.nodes[toVisit.Value].perLayerNeighbors[level] {
-			candidate.Push(pqItem{Value: nodeID})
+			candidate.Push(&pqItem{Value: nodeID})
 		}
 	}
 
 	// put topK nearest as result
 	for k := 0; k < topK; k++ {
+		if result.Len() == 0 {
+			break
+		}
 		res := result.Pop().(*pqItem)
 		resultNodeID = append(resultNodeID, res.Value)
 		resultDistance = append(resultDistance, res.Priority)
 	}
 
 	return
+}
+
+// Function to pretty print the HNSW graph
+func (h *HNSW) PrintGraph() {
+	if h == nil || len(h.nodes) == 0 {
+		fmt.Println("Graph is empty or not initialized.")
+		return
+	}
+
+	fmt.Printf("HNSW Graph (Current Max Level: %d, Entry Point: %d)\n", h.curMaxLevel, h.entryPoint)
+	fmt.Println("===================================================")
+
+	// Iterate from the highest current level down to level 0
+	for level := h.curMaxLevel; level >= 0; level-- {
+		fmt.Printf("\n--- Level %d ---\n", level)
+		foundNodesAtLevel := false
+
+		// Iterate through all nodes in the graph
+		for _, node := range h.nodes {
+			if node == nil {
+				continue // Skip nil nodes if any (should ideally not happen in a well-managed graph)
+			}
+
+			// Check if the node exists at the current level
+			if node.maxLevel >= level {
+				foundNodesAtLevel = true
+				fmt.Printf("  Node %d: ", node.ID)
+
+				// Check if the perLayerNeighbors slice is large enough for this level
+				if level < len(node.perLayerNeighbors) {
+					neighborsAtLevel := node.perLayerNeighbors[level]
+					if len(neighborsAtLevel) > 0 {
+						fmt.Print("Neighbors: [")
+						for i, neighborID := range neighborsAtLevel {
+							fmt.Printf("%d", neighborID)
+							if i < len(neighborsAtLevel)-1 {
+								fmt.Print(", ")
+							}
+						}
+						fmt.Println("]")
+					} else {
+						fmt.Println("Neighbors: []")
+					}
+				} else {
+					// This case implies the node.perLayerNeighbors was not fully populated
+					// up to node.maxLevel for this specific 'level'.
+					// This might indicate an issue in graph construction or that the node
+					// has no connections defined at this level despite existing up to its maxLevel.
+					fmt.Println("Neighbors: (no connections defined at this level in perLayerNeighbors)")
+				}
+			}
+		}
+		if !foundNodesAtLevel {
+			fmt.Println("  (No nodes at this level)")
+		}
+	}
+	fmt.Println("\n===================================================")
 }
