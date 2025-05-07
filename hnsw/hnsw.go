@@ -169,17 +169,14 @@ func (h *HNSW) genRandomMaxLevel() int {
 	return int(math.Floor(-math.Log(uniform) * h.mL))
 }
 
-// searchLevel search within defined level
-func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int, topK int) (resultNodeID []int, resultDistance []float64) {
+func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int) (result priorityQueueMin) {
 	if len(entrypointNode) != len(distanceToEntrypoint) {
 		return
 	}
 
-	resultNodeID = make([]int, 0, topK)
-
 	visited := make(map[int]bool)
 	candidate := newPriorityQueueMax(h.EfConstruction)
-	result := newPriorityQueueMin(h.EfConstruction)
+	result = newPriorityQueueMin(h.EfConstruction)
 
 	var farthestResult float64
 
@@ -206,8 +203,8 @@ func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, dista
 			farthestResult = toVisit.Priority
 		}
 
-		// stop criteria : if the shortest candidate farther than the farther result, stop early.
-		if result.Len() >= topK && toVisit.Priority > farthestResult {
+		// stop criteria : if the shortest candidate farther than the farthestResult, stop early.
+		if toVisit.Priority > farthestResult {
 			break
 		}
 
@@ -220,6 +217,17 @@ func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, dista
 			candidate.Push(&pqItem{Value: nodeID})
 		}
 	}
+
+	return
+}
+
+// searchLevel search within defined level
+func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int, topK int) (resultNodeID []int, resultDistance []float64) {
+	if len(entrypointNode) != len(distanceToEntrypoint) {
+		return
+	}
+
+	result := h.searchLevelInternal(vectorToSearch, entrypointNode, distanceToEntrypoint, level)
 
 	// put topK nearest as result
 	for k := 0; k < topK; k++ {

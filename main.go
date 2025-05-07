@@ -7,21 +7,30 @@ import (
 func main() {
 	graph := v.NewHNSW(
 		v.HNSWOption{
-			M:              3,
+			M:              5,
 			EfConstruction: 200,
 			EfSearch:       20,
 			MaxLevel:       5,
-			VectorDim:      4,
+			VectorDim:      2,
 			Size:           1000,
 		})
 
-	graph.AddVector([]float64{1, 2, 3, 4})
-	graph.AddVector([]float64{5, 6, 7, 8})
-	graph.AddVector([]float64{9, 10, 11, 12})
-	graph.AddVector([]float64{1, 2, 3, 2})
-	graph.AddVector([]float64{17, 18, 19, 20})
-	graph.AddVector([]float64{21, 22, 23, 24})
-	graph.AddVector([]float64{25, 26, 27, 28})
+	graph.AddVector([]float64{1, 1})
+	graph.AddVector([]float64{1, 2})
+	graph.AddVector([]float64{1, 3})
+	graph.AddVector([]float64{0, 1})
+	graph.AddVector([]float64{2, 1})
+	graph.AddVector([]float64{3, 1})
+	graph.AddVector([]float64{4, 1})
+	graph.AddVector([]float64{5, 1})
+	graph.AddVector([]float64{6, 1})
+	graph.AddVector([]float64{7, 8})
+	graph.AddVector([]float64{8, 9})
+	graph.AddVector([]float64{17, 18})
+	graph.AddVector([]float64{21, 22})
+	graph.AddVector([]float64{25, 26})
+	graph.AddVector([]float64{30, 31})
+	graph.AddVector([]float64{35, 36})
 
 	graph.PrintGraph()
 }
