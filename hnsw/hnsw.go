@@ -150,6 +150,8 @@ func (h *HNSW) AddVector(vector []float64) (id int, err error) {
 			candidateNodeID, candidateDistance = h.searchLevel(vector, candidateNodeID, candidateDistance, l, h.EfConstruction)
 			// add candidate as neighboor on this level
 			newNode.perLayerNeighbors[l] = append(newNode.perLayerNeighbors[l], candidateNodeID...)
+			// try to link the neighbors
+			h.linkNeighborNodes(newNode.ID, candidateNodeID, l)
 		}
 	}
 
@@ -240,6 +242,51 @@ func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, dista
 	}
 
 	return
+}
+
+// linkNeighborNodes utility function to call linkNeighborNode
+func (h *HNSW) linkNeighborNodes(src int, dst []int, level int) {
+	if len(dst) <= 0 {
+		return
+	}
+
+	for idx := range dst {
+		h.linkNeighborNode(src, dst[idx], level)
+	}
+}
+
+// linkNeighborNode try to add src node as dst neighbor
+// if dst neighbor >= M, we will try to find a place
+// by comparing if src distance farther then the farthest neighbor of dst
+// TODO : Optimize
+func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
+
+	// if dst has less than M neighbor, just add
+	if len(h.nodes[dst].perLayerNeighbors[level]) < h.M {
+		h.nodes[dst].perLayerNeighbors[level] = append(h.nodes[dst].perLayerNeighbors[level], src)
+		return
+	}
+
+	neighborsMin := newPriorityQueueMin(h.M)
+
+	// distance from src
+	distance := h.distanceComputerFunc(h.vectors[src], h.vectors[dst])
+	neighborsMin.Push(&pqItem{Value: src, Priority: distance})
+
+	for _, neighborID := range h.nodes[dst].perLayerNeighbors[level] {
+		distance := h.distanceComputerFunc(h.vectors[neighborID], h.vectors[dst])
+		neighborsMin.Push(&pqItem{Value: neighborID, Priority: distance})
+	}
+
+	// rebuild the neighbor
+	h.nodes[dst].perLayerNeighbors[level] = []int{} // reset
+	for i := 0; i < h.M; i++ {
+		if neighborsMin.Len() == 0 {
+			break
+		}
+		neighbor := neighborsMin.Pop().(*pqItem)
+		h.nodes[dst].perLayerNeighbors[level] = append(h.nodes[dst].perLayerNeighbors[level], neighbor.Value)
+	}
 }
 
 // Function to pretty print the HNSW graph
