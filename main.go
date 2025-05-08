@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	v "github.com/wejick/vektor/hnsw"
 )
 
@@ -33,4 +35,7 @@ func main() {
 	graph.AddVector([]float64{35, 36})
 
 	graph.PrintGraph()
+
+	fmt.Println(graph.Search([]float64{17, 18}, 5))
+	fmt.Println(graph.Search([]float64{17, 18}, 5))
 }

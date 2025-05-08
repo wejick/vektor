@@ -252,6 +252,42 @@ func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, dista
 	return
 }
 
+func (h *HNSW) Search(VecToSearch []float64, topK int) (resultNodeID []int, resultDistance []float64, err error) {
+	if len(VecToSearch) != h.vectorDim {
+		err = fmt.Errorf("AddVector : Different vector dimension. Got %d expected %d", len(VecToSearch), h.vectorDim)
+		return
+	}
+
+	candidateNodeID := []int{h.entryPoint}
+	candidateDistance := []float64{0}
+
+	// search next level until 0
+	for l := h.curMaxLevel - 1; l >= 0; l-- {
+		// when level higher than nodeMaxlevel, topK is 1
+		if l > 0 {
+			candidateNodeID, candidateDistance = h.searchLevel(VecToSearch, candidateNodeID, candidateDistance, l, 1)
+		} else {
+			candidateNodeID, candidateDistance = h.searchLevel(VecToSearch, candidateNodeID, candidateDistance, l, h.EfSearch)
+		}
+	}
+
+	if len(candidateNodeID) == 0 {
+		return
+	}
+
+	// TODO : for this to work, I need to make sure that the return of searchLevel is ordered by distance.
+	// now I'm not sure as sometimes it's not
+	offset := topK
+	if len(candidateNodeID) < topK {
+		offset = len(candidateNodeID)
+	}
+
+	resultNodeID = append(resultNodeID, candidateNodeID[:offset]...)
+	resultDistance = append(resultDistance, candidateDistance[:offset]...)
+
+	return
+}
+
 // linkNeighborNodes utility function to call linkNeighborNode
 func (h *HNSW) linkNeighborNodes(src int, dst []int, level int) {
 	if len(dst) <= 0 {
