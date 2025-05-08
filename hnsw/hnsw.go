@@ -28,13 +28,15 @@ type HNSWOption struct {
 	// graph size, this is not hard limit as Go will grow the slice
 	// but it is a good idea to set it to a reasonable value
 	// to avoid unnecessary memory allocation & copying
-	Size int64
+	Size int
 }
 
 type HNSW struct {
-	M           int
-	MaxLevel    int
-	vectorDim   int
+	M         int
+	MaxLevel  int
+	vectorDim int
+	size      int
+
 	curMaxLevel int
 	entryPoint  int
 
@@ -50,12 +52,11 @@ type HNSW struct {
 	nodes   []*Node     // Nodes in the graph
 
 	writeLock sync.Mutex
-	curMaxID  int // Current max ID
 }
 
 type Node struct {
 	ID                int
-	perLayerNeighbors [][]int // Neighbors per layer
+	perLevelNeighbors [][]int // Neighbors per level
 	maxLevel          int
 }
 
@@ -92,6 +93,7 @@ func NewHNSW(option HNSWOption) *HNSW {
 		M:                    option.M,
 		EfConstruction:       option.EfConstruction,
 		EfSearch:             option.EfSearch,
+		size:                 option.Size,
 		MaxLevel:             option.MaxLevel,
 		vectorDim:            option.VectorDim,
 		distanceComputerFunc: L2Distance, // now we only have this. hardcode
@@ -126,7 +128,7 @@ func (h *HNSW) AddVector(vector []float64) (id int, err error) {
 
 	// initialize the neighbors array
 	for i := 0; i <= maxLevel; i++ {
-		newNode.perLayerNeighbors = append(newNode.perLayerNeighbors, []int{})
+		newNode.perLevelNeighbors = append(newNode.perLevelNeighbors, []int{})
 	}
 
 	// for first node, set entry point
@@ -149,7 +151,12 @@ func (h *HNSW) AddVector(vector []float64) (id int, err error) {
 		} else {
 			candidateNodeID, candidateDistance = h.searchLevel(vector, candidateNodeID, candidateDistance, l, h.EfConstruction)
 			// add candidate as neighboor on this level
-			newNode.perLayerNeighbors[l] = append(newNode.perLayerNeighbors[l], candidateNodeID...)
+			upperbound := h.M
+			if len(candidateNodeID) < h.M {
+				upperbound = len(candidateNodeID)
+			}
+			newNode.perLevelNeighbors[l] = append(newNode.perLevelNeighbors[l], candidateNodeID[:upperbound]...)
+
 			// try to link the neighbors
 			h.linkNeighborNodes(newNode.ID, candidateNodeID, l)
 		}
@@ -215,7 +222,7 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []in
 		visited[toVisit.Value] = true
 
 		// add neighboor as candidate
-		for _, nodeID := range h.nodes[toVisit.Value].perLayerNeighbors[level] {
+		for _, nodeID := range h.nodes[toVisit.Value].perLevelNeighbors[level] {
 			candidate.Push(&pqItem{Value: nodeID})
 		}
 	}
@@ -224,6 +231,7 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []in
 }
 
 // searchLevel search within defined level
+// the output is sorted by priority, closest is index 0
 func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int, topK int) (resultNodeID []int, resultDistance []float64) {
 	if len(entrypointNode) != len(distanceToEntrypoint) {
 		return
@@ -262,8 +270,8 @@ func (h *HNSW) linkNeighborNodes(src int, dst []int, level int) {
 func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
 
 	// if dst has less than M neighbor, just add
-	if len(h.nodes[dst].perLayerNeighbors[level]) < h.M {
-		h.nodes[dst].perLayerNeighbors[level] = append(h.nodes[dst].perLayerNeighbors[level], src)
+	if len(h.nodes[dst].perLevelNeighbors[level]) < h.M {
+		h.nodes[dst].perLevelNeighbors[level] = append(h.nodes[dst].perLevelNeighbors[level], src)
 		return
 	}
 
@@ -273,20 +281,21 @@ func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
 	distance := h.distanceComputerFunc(h.vectors[src], h.vectors[dst])
 	neighborsMin.Push(&pqItem{Value: src, Priority: distance})
 
-	for _, neighborID := range h.nodes[dst].perLayerNeighbors[level] {
+	for _, neighborID := range h.nodes[dst].perLevelNeighbors[level] {
 		distance := h.distanceComputerFunc(h.vectors[neighborID], h.vectors[dst])
 		neighborsMin.Push(&pqItem{Value: neighborID, Priority: distance})
 	}
 
 	// rebuild the neighbor
-	h.nodes[dst].perLayerNeighbors[level] = []int{} // reset
+	h.nodes[dst].perLevelNeighbors[level] = []int{} // reset
 	for i := 0; i < h.M; i++ {
 		if neighborsMin.Len() == 0 {
 			break
 		}
 		neighbor := neighborsMin.Pop().(*pqItem)
-		h.nodes[dst].perLayerNeighbors[level] = append(h.nodes[dst].perLayerNeighbors[level], neighbor.Value)
+		h.nodes[dst].perLevelNeighbors[level] = append(h.nodes[dst].perLevelNeighbors[level], neighbor.Value)
 	}
+
 }
 
 // Function to pretty print the HNSW graph
@@ -315,9 +324,9 @@ func (h *HNSW) PrintGraph() {
 				foundNodesAtLevel = true
 				fmt.Printf("  Node %d: ", node.ID)
 
-				// Check if the perLayerNeighbors slice is large enough for this level
-				if level < len(node.perLayerNeighbors) {
-					neighborsAtLevel := node.perLayerNeighbors[level]
+				// Check if the perLevelNeighbors slice is large enough for this level
+				if level < len(node.perLevelNeighbors) {
+					neighborsAtLevel := node.perLevelNeighbors[level]
 					if len(neighborsAtLevel) > 0 {
 						fmt.Print("Neighbors: [")
 						for i, neighborID := range neighborsAtLevel {
@@ -331,11 +340,11 @@ func (h *HNSW) PrintGraph() {
 						fmt.Println("Neighbors: []")
 					}
 				} else {
-					// This case implies the node.perLayerNeighbors was not fully populated
+					// This case implies the node.perLevelNeighbors was not fully populated
 					// up to node.maxLevel for this specific 'level'.
 					// This might indicate an issue in graph construction or that the node
 					// has no connections defined at this level despite existing up to its maxLevel.
-					fmt.Println("Neighbors: (no connections defined at this level in perLayerNeighbors)")
+					fmt.Println("Neighbors: (no connections defined at this level in perLevelNeighbors)")
 				}
 			}
 		}

@@ -10,7 +10,7 @@ func main() {
 			M:              5,
 			EfConstruction: 200,
 			EfSearch:       20,
-			MaxLevel:       5,
+			MaxLevel:       3,
 			VectorDim:      2,
 			Size:           1000,
 		})
