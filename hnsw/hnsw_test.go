@@ -1,0 +1,83 @@
+package hnsw
+
+import (
+	"testing"
+)
+
+func TestHNSW_linkNeighborNode(t *testing.T) {
+	tree := NewHNSW(HNSWOption{
+		M:              5,
+		EfConstruction: 5,
+		EfSearch:       5,
+		MaxLevel:       5,
+		VectorDim:      2,
+	})
+
+	id1, _ := tree.AddVector([]float64{0, 0})
+	id2, _ := tree.AddVector([]float64{1, 1})
+	id3, _ := tree.AddVector([]float64{1, 2})
+	id4, _ := tree.AddVector([]float64{1, 3})
+	id5, _ := tree.AddVector([]float64{1, 4})
+	id6, _ := tree.AddVector([]float64{1, 10})
+	id7, _ := tree.AddVector([]float64{1, 6})
+
+	// reset the M of the node 1
+	tree.nodes[id1].perLevelNeighbors[0] = make([]int, 0)
+
+	tree.linkNeighborNode(id2, id1, 0)
+
+	if len(tree.nodes[id1].perLevelNeighbors[0]) != 1 {
+		t.Errorf("expected 1 neighbor, got %d", len(tree.nodes[id1].perLevelNeighbors[0]))
+	}
+
+	tree.linkNeighborNode(id3, id1, 0)
+	tree.linkNeighborNode(id4, id1, 0)
+	tree.linkNeighborNode(id5, id1, 0)
+	tree.linkNeighborNode(id6, id1, 0)
+	tree.linkNeighborNode(id7, id1, 0)
+
+	if len(tree.nodes[id1].perLevelNeighbors[0]) != tree.M {
+		t.Errorf("expected %d neighbor, got %d", tree.M, len(tree.nodes[id1].perLevelNeighbors[0]))
+	}
+
+	expectedM := []int{id2, id3, id4, id5, id7}
+	for idx := range tree.nodes[id1].perLevelNeighbors[0] {
+		if tree.nodes[id1].perLevelNeighbors[0][idx] != expectedM[idx] {
+			t.Errorf("expected %d neighbor id, got %d. idx %d", expectedM[idx], tree.nodes[id1].perLevelNeighbors[0][idx], idx)
+		}
+	}
+}
+
+func BenchmarkHNSW_linkNeighborNode(b *testing.B) {
+	tree := NewHNSW(HNSWOption{
+		M:              16,
+		EfConstruction: 16,
+		EfSearch:       16,
+		MaxLevel:       4,
+		VectorDim:      32,
+	})
+
+	// Add a base node
+	idBase, _ := tree.AddVector(make([]float64, 32))
+
+	// Add a pool of candidate nodes
+	numCandidates := 1000
+	candidateIDs := make([]int, numCandidates)
+	for i := 0; i < numCandidates; i++ {
+		vec := make([]float64, 32)
+		for j := range vec {
+			vec[j] = float64(i) + float64(j)
+		}
+		id, _ := tree.AddVector(vec)
+		candidateIDs[i] = id
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Reset neighbors before each run
+		tree.nodes[idBase].perLevelNeighbors[0] = make([]int, 0)
+		for j := 0; j < numCandidates; j++ {
+			tree.linkNeighborNode(candidateIDs[j], idBase, 0)
+		}
+	}
+}

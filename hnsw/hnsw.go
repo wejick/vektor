@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 )
@@ -168,7 +169,7 @@ func (h *HNSW) AddVector(vector []float64) (id int, err error) {
 		h.entryPoint = newNode.ID
 	}
 
-	return
+	return newNode.ID, nil
 }
 
 // genRandomMaxLevel generate random max level. formula l = floor(-log(uniform(0,1)) * mL)
@@ -302,36 +303,34 @@ func (h *HNSW) linkNeighborNodes(src int, dst []int, level int) {
 // linkNeighborNode try to add src node as dst neighbor
 // if dst neighbor >= M, we will try to find a place
 // by comparing if src distance farther then the farthest neighbor of dst
-// TODO : Optimize
 func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
+	neighborsCandidate := make([]pqItem, 0, h.M+1)
 
-	// if dst has less than M neighbor, just add
-	if len(h.nodes[dst].perLevelNeighbors[level]) < h.M {
-		h.nodes[dst].perLevelNeighbors[level] = append(h.nodes[dst].perLevelNeighbors[level], src)
-		return
-	}
-
-	neighborsMin := newPriorityQueueMin(h.M)
-
-	// distance from src
 	distance := h.distanceComputerFunc(h.vectors[src], h.vectors[dst])
-	neighborsMin.Push(&pqItem{Value: src, Priority: distance})
+	neighborsCandidate = append(neighborsCandidate, pqItem{Value: src, Priority: distance})
 
 	for _, neighborID := range h.nodes[dst].perLevelNeighbors[level] {
 		distance := h.distanceComputerFunc(h.vectors[neighborID], h.vectors[dst])
-		neighborsMin.Push(&pqItem{Value: neighborID, Priority: distance})
+		neighborsCandidate = append(neighborsCandidate, pqItem{Value: neighborID, Priority: distance})
 	}
 
 	// rebuild the neighbor
-	h.nodes[dst].perLevelNeighbors[level] = []int{} // reset
-	for i := 0; i < h.M; i++ {
-		if neighborsMin.Len() == 0 {
-			break
-		}
-		neighbor := neighborsMin.Pop().(*pqItem)
-		h.nodes[dst].perLevelNeighbors[level] = append(h.nodes[dst].perLevelNeighbors[level], neighbor.Value)
+
+	// sort ascending
+	sort.Slice(neighborsCandidate, func(i, j int) bool {
+		return neighborsCandidate[i].Priority < neighborsCandidate[j].Priority
+	})
+
+	h.nodes[dst].perLevelNeighbors[level] = make([]int, 0, h.M) // reset
+
+	upperBound := len(neighborsCandidate)
+	if len(neighborsCandidate) > h.M {
+		upperBound = h.M
 	}
 
+	for i := 0; i < upperBound; i++ {
+		h.nodes[dst].perLevelNeighbors[level] = append(h.nodes[dst].perLevelNeighbors[level], neighborsCandidate[i].Value)
+	}
 }
 
 // Function to pretty print the HNSW graph
