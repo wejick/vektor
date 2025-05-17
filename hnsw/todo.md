@@ -1,0 +1,4 @@
+- The neighboor should be a pair
+- Implement delete node
+    - delete the node directly leveraging the neighboor pair
+- Implement heuristic for not so close node
