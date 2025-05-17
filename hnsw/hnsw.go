@@ -278,8 +278,6 @@ func (h *HNSW) Search(VecToSearch []float64, topK int) (resultNodeID []int, resu
 		return
 	}
 
-	// TODO : for this to work, I need to make sure that the return of searchLevel is ordered by distance.
-	// now I'm not sure as sometimes it's not
 	offset := len(candidateNodeID)
 	if offset > topK {
 		offset = topK
