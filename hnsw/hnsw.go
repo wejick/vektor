@@ -278,9 +278,9 @@ func (h *HNSW) Search(VecToSearch []float64, topK int) (resultNodeID []int, resu
 
 	// TODO : for this to work, I need to make sure that the return of searchLevel is ordered by distance.
 	// now I'm not sure as sometimes it's not
-	offset := topK
-	if len(candidateNodeID) < topK {
-		offset = len(candidateNodeID)
+	offset := len(candidateNodeID)
+	if offset > topK {
+		offset = topK
 	}
 
 	resultNodeID = append(resultNodeID, candidateNodeID[:offset]...)
@@ -324,7 +324,7 @@ func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
 	h.nodes[dst].perLevelNeighbors[level] = make([]int, 0, h.M) // reset
 
 	upperBound := len(neighborsCandidate)
-	if len(neighborsCandidate) > h.M {
+	if upperBound > h.M {
 		upperBound = h.M
 	}
 

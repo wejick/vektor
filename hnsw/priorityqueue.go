@@ -75,20 +75,6 @@ func (pq *priorityQueueMin) Pop() any {
 	return item
 }
 
-// update modifies the priority and value of an Item in the queue.
-// func (pq *priorityQueueMax) update(item *pqItem, value int, priority float64) {
-// 	item.Value = value
-// 	item.Priority = priority
-// 	heap.Fix(pq, item.index)
-// }
-
-// update modifies the priority and value of an Item in the queue.
-// func (pq *priorityQueueMin) update(item *pqItem, value int, priority float64) {
-// 	item.Value = value
-// 	item.Priority = priority
-// 	heap.Fix(pq, item.index)
-// }
-
 func newPriorityQueueMax(size int) priorityQueueMax {
 	pq := make(priorityQueueMax, 0, size)
 
