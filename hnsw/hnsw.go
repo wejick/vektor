@@ -1,6 +1,7 @@
 package hnsw
 
 import (
+	"container/heap"
 	"fmt"
 	"math"
 	"math/rand"
@@ -191,11 +192,11 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []in
 	var farthestResult float64
 
 	for idx := 0; idx < len(entrypointNode); idx++ {
-		candidate.Push(&pqItem{Value: entrypointNode[idx], Priority: distanceToEntrypoint[idx]})
+		heap.Push(&candidate, &pqItem{Value: entrypointNode[idx], Priority: distanceToEntrypoint[idx]})
 	}
 
 	for candidate.Len() > 0 {
-		toVisit := candidate.Pop().(*pqItem)
+		toVisit := heap.Pop(&candidate).(*pqItem)
 
 		// skip visited node
 		if visited[toVisit.Value] {
@@ -219,12 +220,13 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []in
 		}
 
 		// add to result
-		result.Push(toVisit)
+		heap.Push(&result, toVisit)
 		visited[toVisit.Value] = true
 
 		// add neighboor as candidate
 		for _, nodeID := range h.nodes[toVisit.Value].perLevelNeighbors[level] {
-			candidate.Push(&pqItem{Value: nodeID})
+			dist := h.distanceComputerFunc(vectorToSearch, h.vectors[nodeID])
+			heap.Push(&candidate, &pqItem{Value: nodeID, Priority: dist})
 		}
 	}
 
@@ -245,7 +247,7 @@ func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, dista
 		if result.Len() == 0 {
 			break
 		}
-		res := result.Pop().(*pqItem)
+		res := heap.Pop(&result).(*pqItem)
 		resultNodeID = append(resultNodeID, res.Value)
 		resultDistance = append(resultDistance, res.Priority)
 	}
