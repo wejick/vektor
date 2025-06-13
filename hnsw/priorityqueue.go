@@ -6,7 +6,7 @@ import (
 
 // An pqItem is something we manage in a priority queue.
 type pqItem struct {
-	Value    int     // The value of the item; arbitrary.
+	Value    int     // The value of the item;
 	Priority float64 // The priority of the item in the queue.
 	// The index is needed by update and is maintained by the heap.Interface methods.
 	index int // The index of the item in the heap.
