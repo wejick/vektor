@@ -18,7 +18,7 @@ const defaultVectorDim = 128
 
 const defaultSize = 1000
 
-type distanceComputer func(vec1, vec2 []float64) float64
+type distanceComputer func(vec1, vec2 []float32) float32
 
 type HNSWOption struct {
 	M              int
@@ -52,7 +52,7 @@ type HNSW struct {
 	mL  float64 // mL = 1 / log(M)
 	rng RNGMachine
 
-	vectors [][]float64 // Vectors in the graph
+	vectors [][]float32 // Vectors in the graph
 	nodes   []*Node     // Nodes in the graph
 
 	writeLock sync.Mutex
@@ -108,12 +108,12 @@ func NewHNSW(option HNSWOption) *HNSW {
 		curMaxLevel:          0,
 		rng:                  rng,
 		mL:                   mL,
-		vectors:              make([][]float64, 0, option.Size),
+		vectors:              make([][]float32, 0, option.Size),
 		nodes:                make([]*Node, 0, option.Size),
 	}
 }
 
-func (h *HNSW) AddVector(vector []float64) (id int, err error) {
+func (h *HNSW) AddVector(vector []float32) (id int, err error) {
 
 	// can't add if dimension is different
 	if len(vector) != h.vectorDim {
@@ -149,7 +149,7 @@ func (h *HNSW) AddVector(vector []float64) (id int, err error) {
 
 	// search top level
 	var candidateNodeID = []int{h.entryPoint}
-	var candidateDistance = []float64{0}
+	var candidateDistance = []float32{0}
 
 	// search next level until 0
 	for l := h.curMaxLevel - 1; l >= 0; l-- {
@@ -186,7 +186,7 @@ func (h *HNSW) genRandomMaxLevel() int {
 	return int(math.Floor(-math.Log(uniform) * h.mL))
 }
 
-func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int) (result priorityQueueMin) {
+func (h *HNSW) searchLevelInternal(vectorToSearch []float32, entrypointNode []int, distanceToEntrypoint []float32, level int) (result priorityQueueMin) {
 	if len(entrypointNode) != len(distanceToEntrypoint) {
 		return
 	}
@@ -195,7 +195,7 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []in
 	candidate := newPriorityQueueMax(h.EfConstruction)
 	result = newPriorityQueueMin(h.EfConstruction)
 
-	var farthestResult float64
+	var farthestResult float32
 
 	for idx := 0; idx < len(entrypointNode); idx++ {
 		heap.Push(&candidate, &pqItem{Value: entrypointNode[idx], Priority: distanceToEntrypoint[idx]})
@@ -241,7 +241,7 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float64, entrypointNode []in
 
 // searchLevel search within defined level
 // the output is sorted by priority, closest is index 0
-func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, distanceToEntrypoint []float64, level int, topK int) (resultNodeID []int, resultDistance []float64) {
+func (h *HNSW) searchLevel(vectorToSearch []float32, entrypointNode []int, distanceToEntrypoint []float32, level int, topK int) (resultNodeID []int, resultDistance []float32) {
 	if len(entrypointNode) != len(distanceToEntrypoint) {
 		return
 	}
@@ -261,14 +261,14 @@ func (h *HNSW) searchLevel(vectorToSearch []float64, entrypointNode []int, dista
 	return
 }
 
-func (h *HNSW) Search(VecToSearch []float64, topK int) (resultNodeID []int, resultDistance []float64, err error) {
+func (h *HNSW) Search(VecToSearch []float32, topK int) (resultNodeID []int, resultDistance []float32, err error) {
 	if len(VecToSearch) != h.vectorDim {
 		err = fmt.Errorf("AddVector : Different vector dimension. Got %d expected %d", len(VecToSearch), h.vectorDim)
 		return
 	}
 
 	candidateNodeID := []int{h.entryPoint}
-	candidateDistance := []float64{0}
+	candidateDistance := []float32{0}
 
 	// search next level until 0
 	for l := h.curMaxLevel - 1; l >= 0; l-- {
