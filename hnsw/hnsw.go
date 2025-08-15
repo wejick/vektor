@@ -31,6 +31,8 @@ type HNSWOption struct {
 	// but it is a good idea to set it to a reasonable value
 	// to avoid unnecessary memory allocation & copying
 	Size int
+
+	RNG RNGMachine // Optional, if not set, will use default rand source
 }
 
 type HNSW struct {
@@ -48,7 +50,7 @@ type HNSW struct {
 	EfSearch       int
 
 	mL  float64 // mL = 1 / log(M)
-	rng *rand.Rand
+	rng RNGMachine
 
 	vectors [][]float64 // Vectors in the graph
 	nodes   []*Node     // Nodes in the graph
@@ -86,7 +88,11 @@ func NewHNSW(option HNSWOption) *HNSW {
 
 	// Seed the random number generator ONCE
 	source := rand.NewSource(time.Now().UnixNano())
-	rng := rand.New(source)
+	rng := RNGMachine(rand.New(source))
+
+	if option.RNG != nil {
+		rng = option.RNG
+	}
 
 	// Pre-calculate mL
 	mL := 1.0 / math.Log(float64(option.M))
