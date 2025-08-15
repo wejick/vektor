@@ -18,13 +18,13 @@ func TestHNSW_linkNeighborNode(t *testing.T) {
 		RNG: &StaticRNGMachine{Value: staticRNG},
 	})
 
-	id1, _ := tree.AddVector([]float64{0, 0})
-	id2, _ := tree.AddVector([]float64{1, 1})
-	id3, _ := tree.AddVector([]float64{1, 2})
-	id4, _ := tree.AddVector([]float64{1, 3})
-	id5, _ := tree.AddVector([]float64{1, 4})
-	id6, _ := tree.AddVector([]float64{1, 10})
-	id7, _ := tree.AddVector([]float64{1, 6})
+	id1, _ := tree.AddVector([]float32{0, 0})
+	id2, _ := tree.AddVector([]float32{1, 1})
+	id3, _ := tree.AddVector([]float32{1, 2})
+	id4, _ := tree.AddVector([]float32{1, 3})
+	id5, _ := tree.AddVector([]float32{1, 4})
+	id6, _ := tree.AddVector([]float32{1, 10})
+	id7, _ := tree.AddVector([]float32{1, 6})
 
 	// reset the M of the node 1
 	tree.nodes[id1].perLevelNeighbors[0] = make([]int, 0)
@@ -67,15 +67,15 @@ func BenchmarkHNSW_linkNeighborNode(b *testing.B) {
 	})
 
 	// Add a base node
-	idBase, _ := tree.AddVector(make([]float64, 32))
+	idBase, _ := tree.AddVector(make([]float32, 32))
 
 	// Add a pool of candidate nodes
 	numCandidates := 1000
 	candidateIDs := make([]int, numCandidates)
 	for i := 0; i < numCandidates; i++ {
-		vec := make([]float64, 32)
+		vec := make([]float32, 32)
 		for j := range vec {
-			vec[j] = float64(i) + float64(j)
+			vec[j] = float32(i) + float32(j)
 		}
 		id, _ := tree.AddVector(vec)
 		candidateIDs[i] = id
@@ -105,7 +105,7 @@ func TestHNSW_searchLevelInternal(t *testing.T) {
 	// Add 10 vectors in a line: (0,0), (1,0), ..., (9,0)
 	ids := make([]int, 10)
 	for i := 0; i < 10; i++ {
-		ids[i], _ = h.AddVector([]float64{float64(i), 0})
+		ids[i], _ = h.AddVector([]float32{float32(i), 0})
 	}
 
 	// Manually set neighbors for level 0: each node connects to previous and next (like a chain)
@@ -121,9 +121,9 @@ func TestHNSW_searchLevelInternal(t *testing.T) {
 	}
 
 	// Search from node 0 at level 0
-	vectorToSearch := []float64{0, 0}
+	vectorToSearch := []float32{0, 0}
 	entrypointNode := []int{ids[0]}
-	distanceToEntrypoint := []float64{0}
+	distanceToEntrypoint := []float32{0}
 	level := 0
 
 	result := h.searchLevelInternal(vectorToSearch, entrypointNode, distanceToEntrypoint, level)
