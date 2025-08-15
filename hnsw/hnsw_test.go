@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+const staticRNG = 0.03
+
 func TestHNSW_linkNeighborNode(t *testing.T) {
 	tree := NewHNSW(HNSWOption{
 		M:              5,
@@ -12,6 +14,8 @@ func TestHNSW_linkNeighborNode(t *testing.T) {
 		EfSearch:       5,
 		MaxLevel:       5,
 		VectorDim:      2,
+
+		RNG: &StaticRNGMachine{Value: staticRNG},
 	})
 
 	id1, _ := tree.AddVector([]float64{0, 0})
@@ -56,6 +60,8 @@ func BenchmarkHNSW_linkNeighborNode(b *testing.B) {
 		EfSearch:       16,
 		MaxLevel:       4,
 		VectorDim:      32,
+
+		RNG: &StaticRNGMachine{Value: staticRNG},
 	})
 
 	// Add a base node
@@ -90,6 +96,8 @@ func TestHNSW_searchLevelInternal(t *testing.T) {
 		EfSearch:       12,
 		MaxLevel:       2,
 		VectorDim:      2,
+
+		RNG: &StaticRNGMachine{Value: staticRNG},
 	})
 
 	// Add 10 vectors in a line: (0,0), (1,0), ..., (9,0)

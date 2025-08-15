@@ -15,6 +15,8 @@ func main() {
 			MaxLevel:       3,
 			VectorDim:      2,
 			Size:           1000,
+
+			RNG: &v.StaticRNGMachine{Value: 0.03},
 		})
 
 	graph.AddVector([]float64{1, 1})
