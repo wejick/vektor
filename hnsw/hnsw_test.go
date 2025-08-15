@@ -45,6 +45,8 @@ func TestHNSW_linkNeighborNode(t *testing.T) {
 		t.Errorf("expected %d neighbor, got %d", tree.M, len(tree.nodes[id1].perLevelNeighbors[0]))
 	}
 
+	// Check only nearest neighboor is linked
+	// id6 is farthest
 	expectedM := []int{id2, id3, id4, id5, id7}
 	for idx := range tree.nodes[id1].perLevelNeighbors[0] {
 		if tree.nodes[id1].perLevelNeighbors[0][idx] != expectedM[idx] {
