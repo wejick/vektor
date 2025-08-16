@@ -27,12 +27,12 @@ func TestHNSW_linkNeighborNode(t *testing.T) {
 	id7, _ := tree.AddVector([]float32{1, 6})
 
 	// reset the M of the node 1
-	tree.nodes[id1].perLevelNeighbors[0] = make([]int, 0)
+	tree.nodes[id1].PerLevelNeighbors[0] = make([]int, 0)
 
 	tree.linkNeighborNode(id2, id1, 0)
 
-	if len(tree.nodes[id1].perLevelNeighbors[0]) != 1 {
-		t.Errorf("expected 1 neighbor, got %d", len(tree.nodes[id1].perLevelNeighbors[0]))
+	if len(tree.nodes[id1].PerLevelNeighbors[0]) != 1 {
+		t.Errorf("expected 1 neighbor, got %d", len(tree.nodes[id1].PerLevelNeighbors[0]))
 	}
 
 	tree.linkNeighborNode(id3, id1, 0)
@@ -41,16 +41,16 @@ func TestHNSW_linkNeighborNode(t *testing.T) {
 	tree.linkNeighborNode(id6, id1, 0)
 	tree.linkNeighborNode(id7, id1, 0)
 
-	if len(tree.nodes[id1].perLevelNeighbors[0]) != tree.M {
-		t.Errorf("expected %d neighbor, got %d", tree.M, len(tree.nodes[id1].perLevelNeighbors[0]))
+	if len(tree.nodes[id1].PerLevelNeighbors[0]) != tree.M {
+		t.Errorf("expected %d neighbor, got %d", tree.M, len(tree.nodes[id1].PerLevelNeighbors[0]))
 	}
 
 	// Check only nearest neighboor is linked
 	// id6 is farthest
 	expectedM := []int{id2, id3, id4, id5, id7}
-	for idx := range tree.nodes[id1].perLevelNeighbors[0] {
-		if tree.nodes[id1].perLevelNeighbors[0][idx] != expectedM[idx] {
-			t.Errorf("expected %d neighbor id, got %d. idx %d", expectedM[idx], tree.nodes[id1].perLevelNeighbors[0][idx], idx)
+	for idx := range tree.nodes[id1].PerLevelNeighbors[0] {
+		if tree.nodes[id1].PerLevelNeighbors[0][idx] != expectedM[idx] {
+			t.Errorf("expected %d neighbor id, got %d. idx %d", expectedM[idx], tree.nodes[id1].PerLevelNeighbors[0][idx], idx)
 		}
 	}
 }
@@ -84,7 +84,7 @@ func BenchmarkHNSW_linkNeighborNode(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Reset neighbors before each run
-		tree.nodes[idBase].perLevelNeighbors[0] = make([]int, 0)
+		tree.nodes[idBase].PerLevelNeighbors[0] = make([]int, 0)
 		for j := 0; j < numCandidates; j++ {
 			tree.linkNeighborNode(candidateIDs[j], idBase, 0)
 		}
@@ -117,7 +117,7 @@ func TestHNSW_searchLevelInternal(t *testing.T) {
 		if i < 9 {
 			neighbors = append(neighbors, ids[i+1])
 		}
-		h.nodes[ids[i]].perLevelNeighbors[0] = neighbors
+		h.nodes[ids[i]].PerLevelNeighbors[0] = neighbors
 	}
 
 	// Search from node 0 at level 0
