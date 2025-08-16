@@ -2,41 +2,43 @@
 
 learning hnsw in go
 
+# Run recall testing
+We're using [ANN_SIFT10K](http://corpus-texmex.irisa.fr/) dataset to run the test.
+
+```shell
+$cd hnsw_recall_test
+$go run main.go --rebuild
+10000
+100
+100
+Rebuilding index...
+Indexing took 1m39.847052777s
+Searching took 2.314115739s
+Recall: 0.9155000000000001
 ```
-HNSW Graph (Current Max Level: 3, Entry Point: 12)
-===================================================
 
---- Level 3 ---
-  Node 12: Neighbors: []
+# Getting started
+Using the library is straightforward.
 
---- Level 2 ---
-  Node 12: Neighbors: []
+```go
+import v "github.com/wejick/vektor/hnsw"
 
---- Level 1 ---
-  Node 6: Neighbors: []
-  Node 7: Neighbors: []
-  Node 11: Neighbors: []
-  Node 12: Neighbors: []
+func main() {
+	graph := v.NewHNSW(
+		v.HNSWOption{
+			M:              5,
+			EfConstruction: 200,
+			EfSearch:       20,
+			MaxLevel:       3,
+			VectorDim:      2,
+			Size:           1000,
+		})
 
---- Level 0 ---
-  Node 0: Neighbors: []
-  Node 1: Neighbors: []
-  Node 2: Neighbors: []
-  Node 3: Neighbors: []
-  Node 4: Neighbors: []
-  Node 5: Neighbors: []
-  Node 6: Neighbors: [7, 8, 9, 10, 11]
-  Node 7: Neighbors: [6, 8, 9, 10, 11]
-  Node 8: Neighbors: [7, 6, 9, 10, 11]
-  Node 9: Neighbors: [7, 8, 6, 10, 11]
-  Node 10: Neighbors: [7, 8, 9, 6, 11]
-  Node 11: Neighbors: [7, 8, 9, 10, 6]
-  Node 12: Neighbors: [11, 10, 9, 8, 7]
-  Node 13: Neighbors: [10, 9, 8, 6, 7]
-  Node 14: Neighbors: [8, 9, 10, 6, 11]
-  Node 15: Neighbors: [10, 9, 8, 6, 7]
+  graph.AddVector([]float32{1, 1}) // Adding vector
 
-===================================================
-[8 9 10 6 11] [20.248456731316587 14.142135623730951 12.727922061357855 21.400934559032695 0] <nil>
-[8 9 10 6 11] [20.248456731316587 14.142135623730951 12.727922061357855 21.400934559032695 0] <nil>
+  graph.Search([]float32{17, 18}, 5) // Doing ANN Search
+}
 ```
+
+# Notice
+1. AddVector is not threadsafe
