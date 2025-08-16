@@ -3,11 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/kshard/fvecs"
 	"github.com/wejick/vektor/hnsw"
+
+	"runtime/pprof"
 )
 
 var baseVector, queryVector [][]float32
@@ -22,6 +25,17 @@ func main() {
 	flagRebuildIndex = flag.Bool("rebuild", false, "Rebuild the HNSW index")
 
 	flag.Parse()
+
+	//pprof
+	f, err := os.Create("cpu.prof")
+	if err != nil {
+		log.Fatal("could not create CPU profile: ", err)
+	}
+	// start profiling
+	if err := pprof.StartCPUProfile(f); err != nil {
+		log.Fatal("could not start CPU profile: ", err)
+	}
+	defer pprof.StopCPUProfile()
 
 	baseData, err := os.Open("./siftsmall/siftsmall_base.fvecs")
 	if err != nil {

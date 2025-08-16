@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -28,6 +27,7 @@ type HNSWOption struct {
 	MaxLevel         int
 	VectorDim        int
 	DistanceComputer distanceComputer
+	NormalizeVector  bool
 
 	// graph size, this is not hard limit as Go will grow the slice
 	// but it is a good idea to set it to a reasonable value
@@ -38,10 +38,11 @@ type HNSWOption struct {
 }
 
 type HNSW struct {
-	M         int
-	MaxLevel  int
-	vectorDim int
-	size      int
+	M               int
+	MaxLevel        int
+	vectorDim       int
+	size            int
+	normalizeVector bool
 
 	curMaxLevel int
 	entryPoint  int
@@ -125,6 +126,10 @@ func (h *HNSW) AddVector(vector []float32) (id int, err error) {
 	if len(vector) != h.vectorDim {
 		err = fmt.Errorf("AddVector : Different vector dimension. Got %d expected %d", len(vector), h.vectorDim)
 		return 0, err
+	}
+
+	if h.normalizeVector {
+		vector = normalize(vector)
 	}
 
 	maxLevel := h.genRandomMaxLevel()
@@ -404,10 +409,11 @@ func (h *HNSW) PrintGraph() {
 
 func (H *HNSW) toDiskFormat() *HNSWOnDisk {
 	onDisk := &HNSWOnDisk{
-		M:         H.M,
-		MaxLevel:  H.MaxLevel,
-		VectorDim: H.vectorDim,
-		Size:      len(H.nodes),
+		M:               H.M,
+		MaxLevel:        H.MaxLevel,
+		VectorDim:       H.vectorDim,
+		Size:            len(H.nodes),
+		NormalizeVector: H.normalizeVector,
 
 		CurMaxLevel: H.curMaxLevel,
 		EntryPoint:  H.entryPoint,
@@ -445,51 +451,17 @@ func (H *HNSW) SaveToDisk(filepath string) error {
 	return err
 }
 
-func LoadFromDisk(filepath string) (*HNSW, error) {
-	file, err := os.Open(filepath)
-	if err != nil {
-		return nil, err
+func normalize(vector []float32) []float32 {
+	var norm float32
+	for i := range vector {
+		norm += vector[i] * vector[i]
 	}
-	defer file.Close()
+	norm = float32(math.Sqrt(float64(norm)))
 
-	onDisk := &HNSWOnDisk{}
-	var jsonOnDisk []byte
-	jsonOnDisk, err = ioutil.ReadAll(file)
-	if err != nil {
-		return nil, err
+	result := make([]float32, 0, len(vector))
+	for i := range vector {
+		result = append(result, vector[i]/norm)
 	}
 
-	err = json.Unmarshal(jsonOnDisk, onDisk)
-	if err != nil {
-		return nil, err
-	}
-
-	source := rand.NewSource(time.Now().UnixNano())
-	rng := RNGMachine(rand.New(source))
-
-	index := &HNSW{
-		M:              onDisk.M,
-		EfConstruction: onDisk.EfConstruction,
-		EfSearch:       onDisk.EfSearch,
-		size:           onDisk.Size,
-		MaxLevel:       onDisk.MaxLevel,
-		vectorDim:      onDisk.VectorDim,
-		curMaxLevel:    onDisk.CurMaxLevel,
-		entryPoint:     onDisk.EntryPoint,
-		rng:            rng,
-		mL:             onDisk.ML,
-		vectors:        onDisk.Vectors,
-		nodes:          onDisk.Nodes,
-	}
-
-	switch onDisk.DistanceComputerFunc {
-	case l2DistanceName:
-		index.distanceComputerFunc = &L2Distance{}
-	case L2SquaredDistanceName:
-		index.distanceComputerFunc = &L2SquaredDistance{}
-	default:
-		index.distanceComputerFunc = &L2SquaredDistance{}
-	}
-
-	return index, nil
+	return result
 }
