@@ -2,9 +2,12 @@ package hnsw
 
 import (
 	"container/heap"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -18,14 +21,13 @@ const defaultVectorDim = 128
 
 const defaultSize = 1000
 
-type distanceComputer func(vec1, vec2 []float32) float32
-
 type HNSWOption struct {
-	M              int
-	EfConstruction int
-	EfSearch       int
-	MaxLevel       int
-	VectorDim      int
+	M                int
+	EfConstruction   int
+	EfSearch         int
+	MaxLevel         int
+	VectorDim        int
+	DistanceComputer distanceComputer
 
 	// graph size, this is not hard limit as Go will grow the slice
 	// but it is a good idea to set it to a reasonable value
@@ -60,8 +62,8 @@ type HNSW struct {
 
 type Node struct {
 	ID                int
-	perLevelNeighbors [][]int // Neighbors per level
-	maxLevel          int
+	PerLevelNeighbors [][]int // Neighbors per level
+	MaxLevel          int
 }
 
 // NewHNSW creates a new HNSW graph with the given options
@@ -81,9 +83,13 @@ func NewHNSW(option HNSWOption) *HNSW {
 	if option.VectorDim == 0 {
 		option.VectorDim = defaultVectorDim
 	}
-
 	if option.Size == 0 {
 		option.Size = defaultSize
+	}
+
+	distanceComputerFunc := distanceComputer(&L2Distance{})
+	if option.DistanceComputer != nil {
+		distanceComputerFunc = option.DistanceComputer
 	}
 
 	// Seed the random number generator ONCE
@@ -104,7 +110,7 @@ func NewHNSW(option HNSWOption) *HNSW {
 		size:                 option.Size,
 		MaxLevel:             option.MaxLevel,
 		vectorDim:            option.VectorDim,
-		distanceComputerFunc: L2Distance, // now we only have this. hardcode
+		distanceComputerFunc: distanceComputerFunc,
 		curMaxLevel:          0,
 		rng:                  rng,
 		mL:                   mL,
@@ -124,7 +130,7 @@ func (h *HNSW) AddVector(vector []float32) (id int, err error) {
 	maxLevel := h.genRandomMaxLevel()
 
 	newNode := &Node{
-		maxLevel: maxLevel,
+		MaxLevel: maxLevel,
 	}
 
 	h.writeLock.Lock()
@@ -136,7 +142,7 @@ func (h *HNSW) AddVector(vector []float32) (id int, err error) {
 
 	// initialize the neighbors array
 	for i := 0; i <= maxLevel; i++ {
-		newNode.perLevelNeighbors = append(newNode.perLevelNeighbors, []int{})
+		newNode.PerLevelNeighbors = append(newNode.PerLevelNeighbors, []int{})
 	}
 
 	// for first node, set entry point
@@ -163,7 +169,7 @@ func (h *HNSW) AddVector(vector []float32) (id int, err error) {
 			if len(candidateNodeID) < h.M {
 				upperbound = len(candidateNodeID)
 			}
-			newNode.perLevelNeighbors[l] = append(newNode.perLevelNeighbors[l], candidateNodeID[:upperbound]...)
+			newNode.PerLevelNeighbors[l] = append(newNode.PerLevelNeighbors[l], candidateNodeID[:upperbound]...)
 
 			// try to link the neighbors
 			h.linkNeighborNodes(newNode.ID, candidateNodeID, l)
@@ -212,7 +218,7 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float32, entrypointNode []in
 		// calculate the distance
 		// Distance is being used for the priority queue
 		if toVisit.Priority == 0 {
-			toVisit.Priority = h.distanceComputerFunc(vectorToSearch, h.vectors[toVisit.Value])
+			toVisit.Priority = h.distanceComputerFunc.CalcDistance(vectorToSearch, h.vectors[toVisit.Value])
 		}
 
 		// update farthest result
@@ -230,8 +236,8 @@ func (h *HNSW) searchLevelInternal(vectorToSearch []float32, entrypointNode []in
 		visited[toVisit.Value] = true
 
 		// add neighboor as candidate
-		for _, nodeID := range h.nodes[toVisit.Value].perLevelNeighbors[level] {
-			dist := h.distanceComputerFunc(vectorToSearch, h.vectors[nodeID])
+		for _, nodeID := range h.nodes[toVisit.Value].PerLevelNeighbors[level] {
+			dist := h.distanceComputerFunc.CalcDistance(vectorToSearch, h.vectors[nodeID])
 			heap.Push(&candidate, &pqItem{Value: nodeID, Priority: dist})
 		}
 	}
@@ -312,11 +318,11 @@ func (h *HNSW) linkNeighborNodes(src int, dst []int, level int) {
 func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
 	neighborsCandidate := make([]pqItem, 0, h.M+1)
 
-	distance := h.distanceComputerFunc(h.vectors[src], h.vectors[dst])
+	distance := h.distanceComputerFunc.CalcDistance(h.vectors[src], h.vectors[dst])
 	neighborsCandidate = append(neighborsCandidate, pqItem{Value: src, Priority: distance})
 
-	for _, neighborID := range h.nodes[dst].perLevelNeighbors[level] {
-		distance := h.distanceComputerFunc(h.vectors[neighborID], h.vectors[dst])
+	for _, neighborID := range h.nodes[dst].PerLevelNeighbors[level] {
+		distance := h.distanceComputerFunc.CalcDistance(h.vectors[neighborID], h.vectors[dst])
 		neighborsCandidate = append(neighborsCandidate, pqItem{Value: neighborID, Priority: distance})
 	}
 
@@ -327,7 +333,7 @@ func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
 		return neighborsCandidate[i].Priority < neighborsCandidate[j].Priority
 	})
 
-	h.nodes[dst].perLevelNeighbors[level] = make([]int, 0, h.M) // reset
+	h.nodes[dst].PerLevelNeighbors[level] = make([]int, 0, h.M) // reset
 
 	upperBound := len(neighborsCandidate)
 	if upperBound > h.M {
@@ -335,7 +341,7 @@ func (h *HNSW) linkNeighborNode(src int, dst int, level int) {
 	}
 
 	for i := 0; i < upperBound; i++ {
-		h.nodes[dst].perLevelNeighbors[level] = append(h.nodes[dst].perLevelNeighbors[level], neighborsCandidate[i].Value)
+		h.nodes[dst].PerLevelNeighbors[level] = append(h.nodes[dst].PerLevelNeighbors[level], neighborsCandidate[i].Value)
 	}
 }
 
@@ -361,13 +367,13 @@ func (h *HNSW) PrintGraph() {
 			}
 
 			// Check if the node exists at the current level
-			if node.maxLevel >= level {
+			if node.MaxLevel >= level {
 				foundNodesAtLevel = true
 				fmt.Printf("  Node %d: ", node.ID)
 
 				// Check if the perLevelNeighbors slice is large enough for this level
-				if level < len(node.perLevelNeighbors) {
-					neighborsAtLevel := node.perLevelNeighbors[level]
+				if level < len(node.PerLevelNeighbors) {
+					neighborsAtLevel := node.PerLevelNeighbors[level]
 					if len(neighborsAtLevel) > 0 {
 						fmt.Print("Neighbors: [")
 						for i, neighborID := range neighborsAtLevel {
@@ -394,4 +400,96 @@ func (h *HNSW) PrintGraph() {
 		}
 	}
 	fmt.Println("\n===================================================")
+}
+
+func (H *HNSW) toDiskFormat() *HNSWOnDisk {
+	onDisk := &HNSWOnDisk{
+		M:         H.M,
+		MaxLevel:  H.MaxLevel,
+		VectorDim: H.vectorDim,
+		Size:      len(H.nodes),
+
+		CurMaxLevel: H.curMaxLevel,
+		EntryPoint:  H.entryPoint,
+
+		EfConstruction: H.EfConstruction,
+		EfSearch:       H.EfSearch,
+
+		ML:                   H.mL,
+		RNGMachine:           "default",
+		DistanceComputerFunc: H.distanceComputerFunc.GetName(),
+
+		Vectors: H.vectors,
+		Nodes:   H.nodes,
+	}
+
+	return onDisk
+}
+
+func (H *HNSW) SaveToDisk(filepath string) error {
+	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	onDisk := H.toDiskFormat()
+
+	json, err := json.Marshal(onDisk)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write(json)
+
+	return err
+}
+
+func LoadFromDisk(filepath string) (*HNSW, error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	onDisk := &HNSWOnDisk{}
+	var jsonOnDisk []byte
+	jsonOnDisk, err = ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(jsonOnDisk, onDisk)
+	if err != nil {
+		return nil, err
+	}
+
+	source := rand.NewSource(time.Now().UnixNano())
+	rng := RNGMachine(rand.New(source))
+
+	index := &HNSW{
+		M:              onDisk.M,
+		EfConstruction: onDisk.EfConstruction,
+		EfSearch:       onDisk.EfSearch,
+		size:           onDisk.Size,
+		MaxLevel:       onDisk.MaxLevel,
+		vectorDim:      onDisk.VectorDim,
+		curMaxLevel:    onDisk.CurMaxLevel,
+		entryPoint:     onDisk.EntryPoint,
+		rng:            rng,
+		mL:             onDisk.ML,
+		vectors:        onDisk.Vectors,
+		nodes:          onDisk.Nodes,
+	}
+
+	switch onDisk.DistanceComputerFunc {
+	case l2DistanceName:
+		index.distanceComputerFunc = &L2Distance{}
+	case L2SquaredDistanceName:
+		index.distanceComputerFunc = &L2SquaredDistance{}
+	default:
+		index.distanceComputerFunc = &L2SquaredDistance{}
+	}
+
+	return index, nil
 }

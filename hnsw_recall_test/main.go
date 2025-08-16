@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -14,7 +15,14 @@ var groundTruth [][]uint32
 
 const dimension = 128
 
+var flagRebuildIndex *bool
+
 func main() {
+	// read args for flagrebuildindex
+	flagRebuildIndex = flag.Bool("rebuild", false, "Rebuild the HNSW index")
+
+	flag.Parse()
+
 	baseData, err := os.Open("./siftsmall/siftsmall_base.fvecs")
 	if err != nil {
 		panic(err)
@@ -58,17 +66,33 @@ func main() {
 	fmt.Println(len(groundTruth))
 
 	hnswIndex := hnsw.NewHNSW(hnsw.HNSWOption{
-		M:              16,
-		EfConstruction: 256,
-		EfSearch:       256,
-		MaxLevel:       5,
-		VectorDim:      dimension,
-		Size:           len(baseVector),
+		M:                16,
+		EfConstruction:   256,
+		EfSearch:         300,
+		DistanceComputer: &hnsw.L2SquaredDistance{},
+
+		VectorDim: dimension,
+		Size:      len(baseVector),
 	})
 
 	now := time.Now()
-	indexBase(baseVector, hnswIndex)
-	fmt.Printf("Indexing took %v\n", time.Since(now))
+
+	if *flagRebuildIndex {
+		fmt.Printf("Rebuilding index...\n")
+		indexBase(baseVector, hnswIndex)
+		fmt.Printf("Indexing took %v\n", time.Since(now))
+		err = hnswIndex.SaveToDisk("./index.db")
+		if err != nil {
+			fmt.Println("Error saving index:", err)
+		}
+	} else {
+		hnswIndex, err = hnsw.LoadFromDisk("./index.db")
+		if err != nil {
+			fmt.Println("Error loading index:", err)
+			return
+		}
+		fmt.Printf("Loading index took %v\n", time.Since(now))
+	}
 
 	now = time.Now()
 	result := searchQuery(queryVector, hnswIndex, 100)

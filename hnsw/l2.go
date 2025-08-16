@@ -4,9 +4,22 @@ import (
 	"math"
 )
 
+type distanceComputer interface {
+	CalcDistance(vec1, vec2 []float32) float32
+	GetName() string
+}
+
+const l2DistanceName = "L2Distance"
+const L2SquaredDistanceName = "L2SquaredDistance"
+
+type (
+	L2Distance        struct{}
+	L2SquaredDistance struct{}
+)
+
 // L2Distance calculates the Euclidean (L2) distance between two vectors.
 // It returns an error if the vectors have different lengths.
-func L2Distance(vec1, vec2 []float32) float32 {
+func (L2 *L2Distance) CalcDistance(vec1, vec2 []float32) float32 {
 	// Handle empty vectors (distance is 0).
 	if len(vec1) == 0 {
 		return 0
@@ -19,4 +32,21 @@ func L2Distance(vec1, vec2 []float32) float32 {
 	}
 
 	return float32(math.Sqrt(float64(sumOfSquares)))
+}
+
+func (L2 *L2Distance) GetName() string {
+	return l2DistanceName
+}
+
+func (L2 *L2SquaredDistance) CalcDistance(vec1, vec2 []float32) float32 {
+	var sumOfSquares float32
+	for i := range vec1 {
+		diff := vec1[i] - vec2[i]
+		sumOfSquares += diff * diff
+	}
+	return sumOfSquares
+}
+
+func (L2 *L2SquaredDistance) GetName() string {
+	return L2SquaredDistanceName
 }
